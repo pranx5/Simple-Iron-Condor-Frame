@@ -115,4 +115,4 @@ First time you **Save trade** with `npm start`, **`data/trades.json`** is create
 
 ## License
 
-No license file is included by default—add one (e.g. MIT) if you want to specify terms for others.
+jajajajajaja
