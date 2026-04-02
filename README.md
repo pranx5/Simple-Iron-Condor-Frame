@@ -109,7 +109,7 @@ First time you **Save trade** with `npm start`, **`data/trades.json`** is create
 | **Blank trade saves / “Save failed”** (old behavior) | Use **`npm start`**, or rely on **browser storage** when using Python only (current app supports both). |
 | **Yahoo price looks wrong** | Use **Override spot**; free index data can lag or differ from TOS. |
 | **CORS / price fetch errors** | Prefer **`npm start`** or Python from **localhost** (not `file://`). |
-| **`iron-condor-0dte.html` 404** | That single-file name was removed; use **`/`** or **`index.html`**. |
+
 
 ---
 
