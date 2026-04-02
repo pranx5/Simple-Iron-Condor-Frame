@@ -1,0 +1,13 @@
+{
+  "name": "iron-condor-0dte",
+  "description": "0DTE iron condor calculator for SPX/QQQ with optional trade log (see README.md)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node dev-server.mjs",
+    "open": "node dev-server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

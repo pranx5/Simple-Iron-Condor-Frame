@@ -1,0 +1,10 @@
+# Local trade journal (personal data)
+data/trades.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
+
+# If you add Node dependencies later
+node_modules/

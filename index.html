@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>0DTE Iron Condor — SPX / QQQ</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>0DTE Iron Condor Calculator</h1>
+      <div class="ticker-btns">
+        <button type="button" id="btnSPX" class="primary active-ticker" data-ticker="^GSPC" data-name="SPX" data-wing="5" data-iv-default="20">SPX (^GSPC)</button>
+        <button type="button" id="btnQQQ" data-ticker="QQQ" data-name="QQQ" data-wing="2" data-iv-default="22">QQQ</button>
+      </div>
+      <div class="row-actions">
+        <span id="underlyingLabel" class="muted" style="color:var(--muted);font-size:0.9rem;">Underlying</span>
+        <span id="priceDisplay" class="price-pill">—</span>
+        <button type="button" id="btnRefresh">Refresh Price</button>
+      </div>
+      <p id="priceAsOf" class="price-as-of" aria-live="polite"></p>
+    </header>
+
+    <div id="fetchWarn" class="warn-banner" role="alert">
+      Could not load a live price after trying a direct request, JSONP, and public CORS relays (still Yahoo data). Open &ldquo;Override spot price&rdquo; below and enter a quote from your broker. Quotes may be delayed; verify with your broker.
+    </div>
+
+    <details id="spotOverrideDetails" class="spot-details">
+      <summary>Override spot price (optional)</summary>
+      <p class="hint">If filled, this spot is used for expected move, PoP, and the payoff chart instead of Yahoo. Use your broker&rsquo;s mark when the quote is stale or you want a what-if. Required when live fetch fails.</p>
+      <label for="spotOverride" style="margin-top:0">Spot ($)</label>
+      <input type="number" id="spotOverride" step="0.01" min="0" placeholder="Empty = use Yahoo when available" />
+    </details>
+
+    <div class="grid-two" style="margin-top:1rem;">
+      <section class="starting-point">
+        <h2>Starting point (suggestion)</h2>
+        <p class="em-move" id="emMoveLine">Suggested short band: <span class="range">±$—</span> → <span class="range">—</span></p>
+        <p style="font-size:0.8rem;color:var(--muted);margin:0 0 0.5rem;">Intraday 1SD uses DTE = 1 trading day (0DTE end-of-day context); formula: price × (IV/100) / √252. The slider scales how far suggested shorts sit from spot as a fraction of that 1SD move.</p>
+        <p class="prob-label" id="sdProbLabel">~68% model probability inside suggested shorts at 1.0×1SD (normal approx.). Adjust slider to change band width.</p>
+        <div class="aggr-row">
+          <label for="aggrSlider">Strike suggestion aggressiveness <span class="aggr-readout" id="aggrValue">1.00</span>× intraday 1SD <span style="color:var(--muted);font-weight:400">(0.25–1.0)</span></label>
+          <input type="range" id="aggrSlider" min="0.25" max="1" step="0.05" value="1" />
+          <p class="iv-hint" style="margin-top:0.35rem;margin-bottom:0">Lower = tighter shorts (more aggressive / less room to spot); 1.0 = full ±1SD band used for suggestions.</p>
+        </div>
+        <div class="field-row">
+          <div>
+            <label for="ivPct">Implied volatility (IV) % — manual (Yahoo does not provide reliable IV here; edit anytime)</label>
+            <input type="number" id="ivPct" step="0.1" min="0.1" value="20" />
+            <p class="iv-hint">Pre-filled default only; 0DTE IV is often well above headline VIX—override with IV from your chain. For SPX, VIX is often a reasonable starting proxy for ATM IV (not exact).</p>
+          </div>
+          <div>
+            <label for="contracts">Number of contracts</label>
+            <input type="number" id="contracts" step="1" min="1" value="1" />
+          </div>
+        </div>
+        <div class="field-row">
+          <div><label>Suggested short put (editable)</label><input type="number" id="sugShortPut" step="1" /></div>
+          <div><label>Suggested short call (editable)</label><input type="number" id="sugShortCall" step="1" /></div>
+        </div>
+        <div class="field-row">
+          <div><label>Suggested long put (wing)</label><input type="number" id="sugLongPut" step="1" /></div>
+          <div><label>Suggested long call (wing)</label><input type="number" id="sugLongCall" step="1" /></div>
+        </div>
+        <button type="button" id="btnApplySuggest" class="primary apply-suggest">Apply suggestions to legs below</button>
+      </section>
+
+      <section>
+        <h2>Legs &amp; premiums (manual)</h2>
+        <div id="strikeError" class="strike-error" role="alert"></div>
+        <p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.75rem;">Enter per-share premiums from your broker or chain. DTE is fixed at 1 trading day (0DTE EOD context). Strikes must run low to high: long put &lt; short put &lt; short call &lt; long call.</p>
+        <div class="field-row">
+          <div><label>Short put strike</label><input type="number" id="spStrike" step="1" /></div>
+          <div><label>Short put premium received ($/sh)</label><input type="number" id="spPrem" step="0.01" min="0" /></div>
+        </div>
+        <div class="field-row">
+          <div><label>Long put strike</label><input type="number" id="lpStrike" step="1" /></div>
+          <div><label>Long put premium paid ($/sh)</label><input type="number" id="lpPrem" step="0.01" min="0" /></div>
+        </div>
+        <div class="field-row">
+          <div><label>Short call strike</label><input type="number" id="scStrike" step="1" /></div>
+          <div><label>Short call premium received ($/sh)</label><input type="number" id="scPrem" step="0.01" min="0" /></div>
+        </div>
+        <div class="field-row">
+          <div><label>Long call strike</label><input type="number" id="lcStrike" step="1" /></div>
+          <div><label>Long call premium paid ($/sh)</label><input type="number" id="lcPrem" step="0.01" min="0" /></div>
+        </div>
+      </section>
+    </div>
+
+    <section style="margin-top:1rem;">
+      <h2>Position metrics</h2>
+      <div class="cards">
+        <div class="card"><div class="label">Net credit ($/sh)</div><div class="value good" id="outNetCredit">—</div></div>
+        <div class="card"><div class="label">Max profit</div><div class="value good" id="outMaxProfit">—</div></div>
+        <div class="card"><div class="label">Max loss</div><div class="value bad" id="outMaxLoss">—</div></div>
+        <div class="card"><div class="label">Lower breakeven</div><div class="value neutral" id="outLBE">—</div></div>
+        <div class="card"><div class="label">Upper breakeven</div><div class="value neutral" id="outUBE">—</div></div>
+        <div class="card"><div class="label">Profit zone (pts)</div><div class="value neutral" id="outZoneWidth">—</div></div>
+        <div class="card"><div class="label">Risk / reward</div><div class="value neutral" id="outRR">—</div></div>
+        <div class="card"><div class="label">Est. PoP (profit zone)<sup>*</sup></div><div class="value neutral" id="outPoP">—</div></div>
+      </div>
+      <p style="font-size:0.78rem;color:var(--muted);margin:0.65rem 0 0;">
+        <sup>*</sup> Approximate probability of expiring in the profit zone today, using a normal distribution centered on the current underlying with standard deviation = intraday 1SD (IV-based). Educational only; not financial advice.
+      </p>
+    </section>
+
+    <section style="margin-top:1rem;">
+      <h2>P&amp;L at expiration (0DTE)</h2>
+      <p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.5rem;">X-axis: price ±3% from current. Shaded band: ±1SD expected range.</p>
+      <div class="diagram-wrap">
+        <canvas id="payoffCanvas"></canvas>
+      </div>
+      <div class="legend">
+        <span><i class="swatch" style="background:rgba(63,185,80,0.35);border:1px solid var(--green)"></i> Profit zone</span>
+        <span><i class="swatch" style="background:rgba(248,81,73,0.25);border:1px solid var(--red)"></i> Loss zones</span>
+        <span><i class="swatch" style="background:rgba(88,166,255,0.12);border:1px solid var(--accent)"></i> ±1SD range</span>
+        <span style="color:var(--accent)">│ Current</span>
+        <span style="color:#f0c14b">│ Breakevens</span>
+        <span style="color:#8b949e">│ Strikes</span>
+      </div>
+    </section>
+
+    <section class="trade-journal" style="margin-top:1rem;">
+      <h2>Trade log (saved on disk)</h2>
+      <p id="tradeJournalStatus" class="trade-journal-status" role="status"></p>
+      <p style="font-size:0.85rem;color:var(--muted);margin:0 0 0.75rem;">
+        Log iron condors from Thinkorswim. <strong>npm start</strong> saves to <code>data/trades.json</code> on disk. With <strong>python -m http.server</strong> only, trades are stored in <strong>this browser</strong> (localStorage). Four legs, one per line: strike then CALL or PUT.
+      </p>
+      <label for="tradeLegsInput">Legs (4 lines)</label>
+      <textarea id="tradeLegsInput" class="trade-legs-input" rows="4" spellcheck="false" placeholder="6465 CALL&#10;6470 CALL&#10;6390 PUT&#10;6385 PUT"></textarea>
+      <div class="field-row" style="margin-top:0.65rem;">
+        <div>
+          <label for="tradeBreakLower">Lower breakeven ($)</label>
+          <input type="number" id="tradeBreakLower" step="0.01" placeholder="From TOS" />
+        </div>
+        <div>
+          <label for="tradeBreakUpper">Upper breakeven ($)</label>
+          <input type="number" id="tradeBreakUpper" step="0.01" placeholder="From TOS" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div>
+          <label for="tradeMaxProfit">Max profit ($)</label>
+          <input type="number" id="tradeMaxProfit" step="1" placeholder="e.g. 600" />
+        </div>
+        <div>
+          <label for="tradeMaxLoss">Max loss ($)</label>
+          <input type="number" id="tradeMaxLoss" step="1" placeholder="e.g. -900" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div>
+          <label for="tradeContractsLine">Contracts &amp; symbol</label>
+          <input type="text" id="tradeContractsLine" placeholder="3 SPX" autocomplete="off" />
+        </div>
+        <div>
+          <label for="tradeNotes">Notes (optional)</label>
+          <input type="text" id="tradeNotes" placeholder="Opening rationale, etc." maxlength="500" />
+        </div>
+      </div>
+      <button type="button" id="btnSaveTrade" class="primary" style="margin-top:0.5rem;">Save trade</button>
+
+      <div class="trade-filter-row" style="margin-top:1.25rem;">
+        <label for="tradeFilter" style="display:inline;margin-right:0.5rem;">Show:</label>
+        <select id="tradeFilter">
+          <option value="all">All</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="last7" selected>Last 7 days</option>
+          <option value="last30">Past month (30 days)</option>
+        </select>
+      </div>
+      <div id="tradeList" class="trade-list"></div>
+    </section>
+
+    <p class="disclaimer">
+      This tool uses simplified math and approximations. Option premiums and IV are not fetched automatically. Live quotes may be relayed through third-party public CORS services (not affiliated with this page); they can change, fail, or see request URLs. Past or modeled probabilities do not guarantee future results. Not financial advice.
+    </p>
+  </div>
+
+  <script src="js/app.js" defer></script>
+</body>
+</html>
