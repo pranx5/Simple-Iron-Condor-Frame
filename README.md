@@ -93,12 +93,12 @@ Iron Condor/
 ## GitHub: clone on a new machine
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git
-cd YOUR_REPO
+git clone https://github.com/praneethR5/Simple-Iron-Condor-Frame.git
+cd Simple-Iron-Condor-Frame
 npm start
 ```
 
-Replace the URL with your repo. First time you **Save trade** with `npm start`, **`data/trades.json`** is created locally (it is **gitignored** so your personal trades are not pushed by default).
+First time you **Save trade** with `npm start`, **`data/trades.json`** is created locally (it is **gitignored** so your personal trades are not pushed by default).
 
 ---
 
