@@ -1,6 +1,6 @@
 # 0DTE Iron Condor Calculator (SPX / QQQ)
 
-A self-contained tool for **same-day (0DTE) iron condors** on **SPX** (^GSPC) and **QQQ**: intraday expected-move suggestions, payoff chart, metrics, and an optional **trade log**.
+A self-contained tool for **same-day (0DTE) iron condors** on **SPX** ([Yahoo `^SPX`](https://finance.yahoo.com/quote/%5ESPX/)) and **QQQ**: intraday expected-move suggestions, payoff chart, metrics, and an optional **trade log**.
 
 This is **not financial advice**. All probabilities and Yahoo prices are approximations—verify strikes and P&amp;L with your broker.
 

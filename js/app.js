@@ -13,7 +13,7 @@
   const fmtNum = (n, d) => (n == null || !isFinite(n) ? "—" : n.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: d }));
 
   let state = {
-    ticker: "^GSPC",
+    ticker: "^SPX",
     name: "SPX",
     wing: 5,
     ivDefault: 20,
@@ -1099,7 +1099,7 @@
     loadTrades();
   }
 
-  $("underlyingLabel").textContent = "SPX (^GSPC)";
+  $("underlyingLabel").textContent = "SPX (^SPX)";
   recomputeSuggestions();
   updateMetrics();
   refreshPrice();
