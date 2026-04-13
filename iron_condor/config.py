@@ -1,0 +1,21 @@
+﻿"""Configuration constants for the Iron Condor desktop app."""
+
+from pathlib import Path
+
+TRADING_DAYS = 252
+
+UNDERLYINGS = {
+    "SPX": {
+        "ticker": "^SPX",
+        "wing": 5,
+        "iv_default": 20.0,
+    },
+    "QQQ": {
+        "ticker": "QQQ",
+        "wing": 2,
+        "iv_default": 22.0,
+    },
+}
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+TRADES_PATH = DATA_DIR / "trades.json"

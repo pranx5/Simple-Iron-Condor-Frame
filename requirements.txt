@@ -1,0 +1,2 @@
+﻿PySide6>=6.8
+matplotlib>=3.8

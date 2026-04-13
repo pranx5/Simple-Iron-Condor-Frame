@@ -6,5 +6,7 @@ data/trades.json
 Thumbs.db
 *.log
 
-# If you add Node dependencies later
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+.venv/

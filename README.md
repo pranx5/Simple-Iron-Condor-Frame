@@ -1,118 +1,106 @@
-# 0DTE Iron Condor Calculator (SPX / QQQ)
+﻿# 0DTE Iron Condor Calculator (Desktop Python)
 
-A self-contained tool for **same-day (0DTE) iron condors** on **SPX** ([Yahoo `^SPX`](https://finance.yahoo.com/quote/%5ESPX/)) and **QQQ**: intraday expected-move suggestions, payoff chart, metrics, and an optional **trade log**.
+A native **PySide6** desktop app for planning same-day (0DTE) iron condors on **SPX** and **QQQ**.
 
-This is **not financial advice**. All probabilities and Yahoo prices are approximations—verify strikes and P&amp;L with your broker.
-
----
-
-## What you need
-
-| Goal | Requirement |
-|------|----------------|
-| **Recommended (full app)** | [Node.js](https://nodejs.org/) **18+** |
-| **Calculator only (no trade file on disk)** | Any static server, e.g. Python 3 |
-
----
-
-## Quick start (recommended)
-
-From the folder that contains `package.json` and `index.html`:
+No Node.js, no browser app required. Run locally with:
 
 ```bash
-cd path/to/Iron-Condor
-npm start
+python app.py
 ```
 
-Your browser should open to **http://127.0.0.1:5173/** (or check the terminal for the exact URL).
+## What It Does
 
-- **Refresh Price** pulls a spot from Yahoo (with fallbacks). Use **Override spot** for your broker’s mark when needed.
-- **Trade log** saves to **`data/trades.json`** on your machine (created on first save).
+- Pulls live Yahoo spot (or use manual spot override)
+- Suggests strikes from IV-based expected move
+- Shows a Thinkorswim-style 4-leg order preview
+- Calculates:
+  - net credit
+  - max profit / max loss
+  - lower and upper breakeven
+  - profit-zone width
+  - risk/reward
+  - estimated PoP (normal approximation)
+- Draws expiration P/L graph
+- Saves trade journal entries to disk (`data/trades.json`)
 
-### Port already in use?
+> Educational tool only. Not financial advice.
 
-If you see `EADDRINUSE` on port **5173**, stop the other terminal running `npm start`, or use another port:
+## Setup
+
+### 1. Create and activate venv
 
 ```powershell
-# PowerShell
-$env:PORT=5174; npm start
+python -m venv .venv
+.\.venv\Scripts\activate
 ```
 
-```cmd
-REM CMD
-set PORT=5174 && npm start
+### 2. Install dependencies
+
+```powershell
+pip install -r requirements.txt
 ```
 
----
+### 3. Launch
 
-## Alternative: Python static server
-
-If you only want the HTML/CSS/JS **without** saving trades to a file:
-
-```bash
-cd path/to/Iron-Condor
-python -m http.server 8000
+```powershell
+python app.py
 ```
 
-Open **http://localhost:8000/** (use the folder that contains `index.html`).
+## Daily Workflow
 
-**Limits:**
+1. Select `SPX` or `QQQ`
+2. Click **Refresh Price** (or enter **Override Spot**)
+3. Enter IV from Thinkorswim (see section below)
+4. Use aggressiveness slider for baseline strikes
+5. Fine-tune suggested strikes manually (or with +/- step buttons)
+6. Copy the TOS-style preview into Thinkorswim order entry
+7. Enter premiums from chain/broker to evaluate metrics
+8. Save the trade in the journal if desired
 
-- No **`/api/trades`** endpoint → trades are stored in the **browser only** (`localStorage`), not `data/trades.json`.
-- Clearing site data removes those saves.
+## Where To Find IV In Thinkorswim
 
----
+Use the value shown in the option chain header row under **Net Chng %** (circled below in your screenshot).
 
-## Trade log
+- Open **Trade** tab
+- Load the underlying (ex: SPX)
+- In the option chain row for your expiry, read the **Net Chng %** value
+- Enter that number as IV in this calculator
 
-| How you run the app | Where trades are stored |
-|---------------------|-------------------------|
-| `npm start` (Node server) | `data/trades.json` on disk |
-| `python -m http.server` | This browser’s `localStorage` |
+### Screenshot
 
-You can **filter** saved trades (today, yesterday, last 7 days, past 30 days, all) and **delete** entries from the UI.
+Add your screenshot file to:
 
----
+`docs/images/tos-iv-location.png`
 
-## Project layout
+Then this image will render automatically in GitHub README:
 
-```
+![Thinkorswim IV location](docs/images/tos-iv-location.png)
+
+## Notes
+
+- If your connection is slow, quote refresh may take a few seconds.
+- If quote fetch fails, use **Override Spot** and continue offline.
+- Trade logs are local to this machine in `data/trades.json`.
+
+## Project Structure
+
+```text
 Iron Condor/
-├── index.html          # Main page
-├── css/styles.css      # Styles
-├── js/app.js           # Calculator + trade UI
-├── dev-server.mjs      # Static server + REST API for trades
-├── package.json        # npm start → node dev-server.mjs
-├── data/
-│   └── .gitkeep        # Keeps data/ in git; trades file is optional
-└── README.md
+|-- app.py
+|-- iron_condor/
+|   |-- __init__.py
+|   |-- config.py
+|   |-- math_utils.py
+|   |-- yahoo_client.py
+|   |-- storage.py
+|   `-- ui.py
+|-- data/
+|   `-- trades.json (created on first save)
+|-- requirements.txt
+|-- pyproject.toml
+`-- README.md
 ```
-
----
-
-## GitHub: clone on a new machine
-
-```bash
-git clone https://github.com/praneethR5/Simple-Iron-Condor-Frame.git
-cd Simple-Iron-Condor-Frame
-npm start
-```
-
-First time you **Save trade** with `npm start`, **`data/trades.json`** is created locally (it is **gitignored** so your personal trades are not pushed by default).
-
----
-
-## Troubleshooting
-
-| Issue | What to try |
-|-------|-------------|
-| **Blank trade saves / “Save failed”** (old behavior) | Use **`npm start`**, or rely on **browser storage** when using Python only (current app supports both). |
-| **Yahoo price looks wrong** | Use **Override spot**; free index data can lag or differ from TOS. |
-| **CORS / price fetch errors** | Prefer **`npm start`** or Python from **localhost** (not `file://`). |
-
-
----
 
 ## License
 
-jajajajajaja
+Personal use.
