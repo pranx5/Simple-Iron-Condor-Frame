@@ -7,6 +7,7 @@ import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import date, datetime, time as dt_time, timedelta
 from typing import Any, Optional
 
 
@@ -135,3 +136,35 @@ def fetch_yahoo_quote(ticker: str) -> Quote:
         if first_error is not None:
             raise first_error
         raise
+
+
+def fetch_yahoo_close_for_date(ticker: str, target_date: date) -> Optional[float]:
+    """
+    Fetch official daily close for a ticker on a specific calendar date.
+    Returns None if no bar is available for that date.
+    """
+    start = datetime.combine(target_date - timedelta(days=2), dt_time.min).timestamp()
+    end = datetime.combine(target_date + timedelta(days=3), dt_time.min).timestamp()
+    q = urllib.parse.quote(ticker, safe="")
+    url = (
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{q}?"
+        f"interval=1d&period1={int(start)}&period2={int(end)}"
+    )
+    data = _get_json(url)
+    result = data.get("chart", {}).get("result") or []
+    if not result:
+        return None
+    r0 = result[0]
+    timestamps = r0.get("timestamp") or []
+    quote = ((r0.get("indicators") or {}).get("quote") or [{}])[0]
+    closes = quote.get("close") or []
+
+    for ts, close in zip(timestamps, closes):
+        if not isinstance(ts, (int, float)):
+            continue
+        if not isinstance(close, (int, float)):
+            continue
+        d = datetime.fromtimestamp(ts).date()
+        if d == target_date:
+            return float(close)
+    return None

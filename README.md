@@ -22,6 +22,7 @@ python app.py
   - estimated PoP (normal approximation)
 - Draws expiration P/L graph
 - Saves trade journal entries to disk (`data/trades.json`)
+- Can evaluate saved trades as `WIN` / `LOSS` from trade-day close vs breakevens
 
 > Educational tool only. Not financial advice.
 
@@ -56,6 +57,18 @@ python app.py
 6. Copy the TOS-style preview into Thinkorswim order entry
 7. Enter premiums from chain/broker to evaluate metrics
 8. Save the trade in the journal if desired
+9. Click **Check Win/Loss** in the trade log to backfill `Close` and `Result`
+
+## Win/Loss Journal Check
+
+- Uses each saved trade's local `savedAt` date as the trade date
+- Pulls that date's daily close from Yahoo
+- Marks:
+  - `WIN` when close is inside `[Lower BE, Upper BE]`
+  - `LOSS` when close is outside that range
+- Stores `dayClose`, `closeDate`, and `result` into the saved trade record
+
+If a trade is missing breakevens or close data is unavailable, result shows `NO BE` or `NO CLOSE`.
 
 ## Where To Find IV In Thinkorswim
 
@@ -65,14 +78,6 @@ Use the value shown in the option chain header row under **Net Chng %** (circled
 - Load the underlying (ex: SPX)
 - In the option chain row for your expiry, read the **Net Chng %** value
 - Enter that number as IV in this calculator
-
-### Screenshot
-
-Add your screenshot file to:
-
-`docs/images/IFV.png`
-
-Then this image will render automatically in GitHub README:
 
 ![Thinkorswim IV location](docs/images/IFV.png)
 

@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 from .config import UNDERLYINGS
 from .math_utils import normal_cdf, one_sd_dollars, pl_at_expiry_per_share, pop_profit_zone, round_strike
 from .storage import TradeStore
-from .yahoo_client import fetch_yahoo_quote
+from .yahoo_client import fetch_yahoo_close_for_date, fetch_yahoo_quote
 
 
 DASH = "-"
@@ -431,8 +431,10 @@ class MainWindow(QMainWindow):
         btns = QHBoxLayout()
         self.save_trade_btn = QPushButton("Save Trade")
         self.delete_trade_btn = QPushButton("Delete Selected")
+        self.check_outcomes_btn = QPushButton("Check Win/Loss")
         btns.addWidget(self.save_trade_btn)
         btns.addWidget(self.delete_trade_btn)
+        btns.addWidget(self.check_outcomes_btn)
 
         self.filter_combo = QComboBox()
         self.filter_combo.addItem("All", "all")
@@ -446,8 +448,10 @@ class MainWindow(QMainWindow):
         btns.addStretch(1)
         lay.addLayout(btns)
 
-        self.trade_table = QTableWidget(0, 6)
-        self.trade_table.setHorizontalHeaderLabels(["Saved", "Qty x Sym", "Legs", "BE Range", "P/L", "Notes"])
+        self.trade_table = QTableWidget(0, 8)
+        self.trade_table.setHorizontalHeaderLabels(
+            ["Saved", "Qty x Sym", "Legs", "BE Range", "P/L", "Close", "Result", "Notes"]
+        )
         self.trade_table.horizontalHeader().setStretchLastSection(True)
         self.trade_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.trade_table.setSelectionMode(QTableWidget.SingleSelection)
@@ -491,6 +495,7 @@ class MainWindow(QMainWindow):
 
         self.save_trade_btn.clicked.connect(self._save_trade)
         self.delete_trade_btn.clicked.connect(self._delete_selected_trade)
+        self.check_outcomes_btn.clicked.connect(self._check_trade_outcomes)
         self.filter_combo.currentIndexChanged.connect(self._render_trade_list)
 
     def _on_inputs_changed(self) -> None:
@@ -883,6 +888,65 @@ class MainWindow(QMainWindow):
         self.cached_trades = self.store.list_sorted()
         self._render_trade_list()
 
+    def _symbol_to_yahoo_ticker(self, symbol: str) -> str:
+        s = (symbol or "").upper().strip()
+        if "SPX" in s:
+            return "^SPX"
+        if "QQQ" in s:
+            return "QQQ"
+        return s
+
+    def _check_trade_outcomes(self) -> None:
+        trades = self.store.list_sorted()
+        if not trades:
+            self.trade_status_lbl.setText("No trades to evaluate.")
+            self.trade_status_lbl.setStyleSheet("color:#b91c1c;")
+            return
+
+        checked = 0
+        resolved = 0
+        for tr in trades:
+            saved = _iso_to_local(str(tr.get("savedAt", "")))
+            if saved is None:
+                tr["result"] = "NO DATE"
+                continue
+
+            be_l = tr.get("breakEvenLower")
+            be_u = tr.get("breakEvenUpper")
+            if not isinstance(be_l, (int, float)) or not isinstance(be_u, (int, float)) or be_u <= be_l:
+                tr["result"] = "NO BE"
+                continue
+
+            ticker = self._symbol_to_yahoo_ticker(str(tr.get("contractsSymbol", "")))
+            if not ticker:
+                tr["result"] = "NO SYMBOL"
+                continue
+
+            checked += 1
+            try:
+                close = fetch_yahoo_close_for_date(ticker, saved.date())
+            except Exception:
+                close = None
+
+            if close is None:
+                tr["result"] = "NO CLOSE"
+                tr["dayClose"] = None
+                continue
+
+            tr["dayClose"] = float(close)
+            tr["closeDate"] = saved.date().isoformat()
+            if be_l <= close <= be_u:
+                tr["result"] = "WIN"
+            else:
+                tr["result"] = "LOSS"
+            resolved += 1
+
+        self.store.write_all(trades)
+        self.cached_trades = trades
+        self._render_trade_list()
+        self.trade_status_lbl.setText(f"Win/Loss check complete: resolved {resolved} of {checked} eligible trades.")
+        self.trade_status_lbl.setStyleSheet("color:#166534;")
+
     def _render_trade_list(self) -> None:
         key = self.filter_combo.currentData()
         rows = [t for t in self.cached_trades if self._trade_matches_filter(str(t.get("savedAt", "")), key)]
@@ -904,6 +968,9 @@ class MainWindow(QMainWindow):
             ml = tr.get("maxLoss")
             pl_str = f"{_fmt_money(mp if isinstance(mp, (int, float)) else None)} / {_fmt_money(ml if isinstance(ml, (int, float)) else None)}"
 
+            close = tr.get("dayClose")
+            close_str = _fmt_num(close, 2) if isinstance(close, (int, float)) else "-"
+            result = str(tr.get("result", "-"))
             notes = str(tr.get("notes", ""))
 
             items = [
@@ -912,10 +979,17 @@ class MainWindow(QMainWindow):
                 QTableWidgetItem(legs_str),
                 QTableWidgetItem(be_str),
                 QTableWidgetItem(pl_str),
+                QTableWidgetItem(close_str),
+                QTableWidgetItem(result),
                 QTableWidgetItem(notes),
             ]
             for col, item in enumerate(items):
                 item.setData(Qt.UserRole, tr.get("id"))
+                if col == 6:
+                    if result == "WIN":
+                        item.setForeground(Qt.darkGreen)
+                    elif result == "LOSS":
+                        item.setForeground(Qt.red)
                 self.trade_table.setItem(row_idx, col, item)
 
         self.trade_table.resizeColumnsToContents()
