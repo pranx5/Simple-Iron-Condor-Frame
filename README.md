@@ -70,11 +70,11 @@ Use the value shown in the option chain header row under **Net Chng %** (circled
 
 Add your screenshot file to:
 
-`docs/images/tos-iv-location.png`
+`docs/images/IFV.png`
 
 Then this image will render automatically in GitHub README:
 
-![Thinkorswim IV location](docs/images/tos-iv-location.png)
+![Thinkorswim IV location](docs/images/IFV.png)
 
 ## Notes
 
