@@ -32,7 +32,7 @@ python app.py
 ### Clone the repo
 
 ```powershell
-git clone https://github.com/praneethR5/Simple-Iron-Condor-Frame.git
+git clone https://github.com/pranx5/Simple-Iron-Condor-Frame.git
 cd Simple-Iron-Condor-Frame
 ```
 
