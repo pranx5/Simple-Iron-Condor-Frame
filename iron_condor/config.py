@@ -6,7 +6,7 @@ TRADING_DAYS = 252
 
 UNDERLYINGS = {
     "SPX": {
-        "ticker": "^SPX",
+        "ticker": "^GSPC",
         "wing": 5,
         "iv_default": 20.0,
     },

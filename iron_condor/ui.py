@@ -200,7 +200,7 @@ class MainWindow(QMainWindow):
         header.addWidget(QLabel("Underlying:"))
 
         self.ticker_combo = QComboBox()
-        self.ticker_combo.addItem("SPX (^SPX)", "SPX")
+        self.ticker_combo.addItem("SPX (^GSPC)", "SPX")
         self.ticker_combo.addItem("QQQ", "QQQ")
         header.addWidget(self.ticker_combo)
 
@@ -891,7 +891,7 @@ class MainWindow(QMainWindow):
     def _symbol_to_yahoo_ticker(self, symbol: str) -> str:
         s = (symbol or "").upper().strip()
         if "SPX" in s:
-            return "^SPX"
+            return "^GSPC"
         if "QQQ" in s:
             return "QQQ"
         return s
