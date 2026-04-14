@@ -23,6 +23,7 @@ python app.py
 - Draws expiration P/L graph
 - Saves trade journal entries to disk (`data/trades.json`)
 - Can evaluate saved trades as `WIN` / `LOSS` from trade-day close vs breakevens
+- Includes a directional-bias panel (`Projected Up/Down/Neutral`) from multiple Yahoo signals
 
 > Educational tool only. Not financial advice.
 
@@ -65,6 +66,15 @@ python app.py
 7. Enter premiums from chain/broker to evaluate metrics
 8. Save the trade in the journal if desired
 9. Click **Check Win/Loss** in the trade log to backfill `Close` and `Result`
+10. Use **Directional Bias** as a soft tilt input when adjusting condor placement
+
+## Directional Bias (Experimental)
+
+The app pulls several Yahoo signals (index/ETF, futures when relevant, VIX, and rates) and computes a weighted score.
+
+- Output label: `Projected Up`, `Projected Down`, or `Neutral`
+- Includes confidence (`Low/Medium/High`) and per-signal impact row
+- Intended only as context for small strike skew adjustments, not a standalone trade signal
 
 ## Win/Loss Journal Check
 

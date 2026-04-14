@@ -16,6 +16,7 @@ class Quote:
     price: float
     as_of_sec: Optional[int]
     source: str
+    change_pct: Optional[float] = None
 
 
 def _get_json(url: str, timeout: float = 10.0) -> Any:
@@ -93,7 +94,7 @@ def _parse_chart_quote(data: dict[str, Any]) -> Quote:
     if price is None:
         raise ValueError("No chart price")
 
-    return Quote(price=float(price), as_of_sec=as_of_sec, source="chart")
+    return Quote(price=float(price), as_of_sec=as_of_sec, source="chart", change_pct=None)
 
 
 def _parse_v7_quote(data: dict[str, Any]) -> Quote:
@@ -119,7 +120,10 @@ def _parse_v7_quote(data: dict[str, Any]) -> Quote:
             as_of_sec = int(v)
             break
 
-    return Quote(price=price, as_of_sec=as_of_sec, source="quote")
+    chg = r0.get("regularMarketChangePercent")
+    change_pct = float(chg) if isinstance(chg, (int, float)) else None
+
+    return Quote(price=price, as_of_sec=as_of_sec, source="quote", change_pct=change_pct)
 
 
 def fetch_yahoo_quote(ticker: str) -> Quote:

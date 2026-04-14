@@ -3,10 +3,12 @@
 import re
 from datetime import datetime, timedelta
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -22,6 +24,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -194,33 +198,47 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         root = QWidget()
         self.setCentralWidget(root)
-        main = QVBoxLayout(root)
+        root_layout = QVBoxLayout(root)
 
-        header = QHBoxLayout()
-        header.addWidget(QLabel("Underlying:"))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        root_layout.addWidget(scroll)
+
+        content = QWidget()
+        scroll.setWidget(content)
+        main = QVBoxLayout(content)
+
+        header_controls = QHBoxLayout()
+        header_controls.addWidget(QLabel("Underlying:"))
 
         self.ticker_combo = QComboBox()
         self.ticker_combo.addItem("SPX (^GSPC)", "SPX")
         self.ticker_combo.addItem("QQQ", "QQQ")
-        header.addWidget(self.ticker_combo)
+        self.ticker_combo.addItem("AAPL", "AAPL")
+        self.ticker_combo.setMinimumWidth(150)
+        header_controls.addWidget(self.ticker_combo)
 
         self.refresh_btn = QPushButton("Refresh Price")
-        header.addWidget(self.refresh_btn)
+        header_controls.addWidget(self.refresh_btn)
 
         self.price_lbl = QLabel("Spot: -")
         self.price_lbl.setStyleSheet("font-weight:600;")
-        header.addWidget(self.price_lbl)
+        header_controls.addWidget(self.price_lbl)
+        header_controls.addStretch(1)
+        main.addLayout(header_controls)
 
         self.price_asof_lbl = QLabel("")
         self.price_asof_lbl.setStyleSheet("color:#64748b;")
-        header.addWidget(self.price_asof_lbl, 1)
-
-        main.addLayout(header)
+        self.price_asof_lbl.setWordWrap(True)
+        self.price_asof_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        main.addWidget(self.price_asof_lbl)
 
         row = QHBoxLayout()
 
         left = QVBoxLayout()
         left.addWidget(self._build_suggestion_group())
+        left.addWidget(self._build_bias_group())
         left.addWidget(self._build_legs_group())
         left.addWidget(self._build_metrics_group())
 
@@ -356,6 +374,42 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.lc_k_edit, 4, 1)
         lay.addWidget(QLabel("Long Call Premium ($/sh)"), 4, 2)
         lay.addWidget(self.lc_p_edit, 4, 3)
+
+        return box
+
+    def _build_bias_group(self) -> QGroupBox:
+        box = QGroupBox("Directional Bias (Experimental)")
+        lay = QVBoxLayout(box)
+
+        row = QHBoxLayout()
+        self.bias_summary_lbl = QLabel("Projected: -")
+        self.bias_summary_lbl.setStyleSheet("font-weight:700;color:#334155;")
+        row.addWidget(self.bias_summary_lbl)
+
+        self.bias_conf_lbl = QLabel("Confidence: -")
+        self.bias_conf_lbl.setStyleSheet("color:#475569;")
+        row.addWidget(self.bias_conf_lbl)
+
+        self.refresh_bias_btn = QPushButton("Refresh Bias")
+        row.addWidget(self.refresh_bias_btn)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+        self.bias_score_lbl = QLabel("Score: -")
+        self.bias_score_lbl.setStyleSheet("color:#475569;")
+        lay.addWidget(self.bias_score_lbl)
+
+        self.bias_table = QTableWidget(0, 4)
+        self.bias_table.setHorizontalHeaderLabels(["Signal", "Change %", "Weight", "Impact"])
+        self.bias_table.setSelectionMode(QTableWidget.NoSelection)
+        self.bias_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.bias_table.horizontalHeader().setStretchLastSection(True)
+        self.bias_table.setFixedHeight(160)
+        lay.addWidget(self.bias_table)
+
+        self.bias_note_lbl = QLabel("Heuristic only. Use as directional context, not a trade signal.")
+        self.bias_note_lbl.setStyleSheet("color:#64748b;")
+        lay.addWidget(self.bias_note_lbl)
 
         return box
 
@@ -496,11 +550,117 @@ class MainWindow(QMainWindow):
         self.save_trade_btn.clicked.connect(self._save_trade)
         self.delete_trade_btn.clicked.connect(self._delete_selected_trade)
         self.check_outcomes_btn.clicked.connect(self._check_trade_outcomes)
+        self.refresh_bias_btn.clicked.connect(self._refresh_directional_bias)
         self.filter_combo.currentIndexChanged.connect(self._render_trade_list)
 
     def _on_inputs_changed(self) -> None:
         self._recompute_suggestions()
         self._update_metrics()
+
+    def _bias_universe(self) -> list[tuple[str, str, float, bool, float]]:
+        # (ticker, label, weight, invert_sign, threshold_pct)
+        name = str(self.state.get("name", "SPX"))
+        if name == "SPX":
+            return [
+                ("^GSPC", "SPX", 2.0, False, 0.10),
+                ("ES=F", "ES Futures", 2.0, False, 0.10),
+                ("SPY", "SPY", 1.0, False, 0.08),
+                ("^VIX", "VIX", 1.3, True, 1.5),
+                ("^TNX", "10Y Yield", 0.7, True, 0.35),
+            ]
+        if name == "QQQ":
+            return [
+                ("QQQ", "QQQ", 2.0, False, 0.12),
+                ("SPY", "SPY", 1.0, False, 0.08),
+                ("^VIX", "VIX", 1.3, True, 1.5),
+                ("^TNX", "10Y Yield", 0.7, True, 0.35),
+            ]
+        return [
+            ("AAPL", "AAPL", 2.0, False, 0.15),
+            ("QQQ", "QQQ", 1.0, False, 0.12),
+            ("SPY", "SPY", 0.8, False, 0.08),
+            ("^VIX", "VIX", 1.2, True, 1.5),
+            ("^TNX", "10Y Yield", 0.5, True, 0.35),
+        ]
+
+    def _refresh_directional_bias(self) -> None:
+        universe = self._bias_universe()
+        self.refresh_bias_btn.setEnabled(False)
+        self.bias_summary_lbl.setText("Projected: refreshing...")
+        self.bias_conf_lbl.setText("Confidence: -")
+        self.bias_score_lbl.setText("Score: -")
+
+        score = 0.0
+        rows: list[tuple[str, str, str, str, Optional[str]]] = []
+        usable = 0
+
+        for ticker, label, weight, invert_sign, threshold in universe:
+            change_text = "n/a"
+            weight_text = f"{weight:.1f}"
+            impact_text = "No data"
+            color = "#64748b"
+            effect = 0.0
+            try:
+                q = fetch_yahoo_quote(ticker)
+                pct = q.change_pct
+                if pct is not None:
+                    usable += 1
+                    signed = -pct if invert_sign else pct
+                    change_text = f"{pct:+.2f}%"
+                    if signed >= threshold:
+                        effect = weight
+                    elif signed <= -threshold:
+                        effect = -weight
+                    else:
+                        effect = 0.0
+
+                    if effect > 0:
+                        impact_text = f"Bullish (+{weight:.1f})"
+                        color = "#166534"
+                    elif effect < 0:
+                        impact_text = f"Bearish (-{weight:.1f})"
+                        color = "#b91c1c"
+                    else:
+                        impact_text = "Neutral (0.0)"
+                        color = "#475569"
+            except Exception:
+                pass
+
+            score += effect
+            rows.append((label, change_text, weight_text, impact_text, color))
+
+        abs_score = abs(score)
+        if score >= 2.0:
+            projected = "Projected Up"
+            proj_color = "#166534"
+        elif score <= -2.0:
+            projected = "Projected Down"
+            proj_color = "#b91c1c"
+        else:
+            projected = "Neutral"
+            proj_color = "#475569"
+
+        if abs_score >= 4.0:
+            conf = "High"
+        elif abs_score >= 2.0:
+            conf = "Medium"
+        else:
+            conf = "Low"
+
+        self.bias_summary_lbl.setText(f"Projected: {projected}")
+        self.bias_summary_lbl.setStyleSheet(f"font-weight:700;color:{proj_color};")
+        self.bias_conf_lbl.setText(f"Confidence: {conf} ({usable}/{len(universe)} signals)")
+        self.bias_score_lbl.setText(f"Score: {score:+.2f}")
+
+        self.bias_table.setRowCount(len(rows))
+        for r, (label, chg, wt, impact, color) in enumerate(rows):
+            items = [QTableWidgetItem(label), QTableWidgetItem(chg), QTableWidgetItem(wt), QTableWidgetItem(impact)]
+            for c, it in enumerate(items):
+                if c == 3:
+                    it.setForeground(QColor(color))
+                self.bias_table.setItem(r, c, it)
+        self.bias_table.resizeColumnsToContents()
+        self.refresh_bias_btn.setEnabled(True)
 
     def _on_suggested_inputs_changed(self) -> None:
         self._update_suggested_ticket_preview()
@@ -598,6 +758,7 @@ class MainWindow(QMainWindow):
         if self._legs_strikes_empty():
             self._apply_suggestions_to_legs()
         self._update_metrics()
+        self._refresh_directional_bias()
 
     def _legs_strikes_empty(self) -> bool:
         for w in [self.lp_k_edit, self.sp_k_edit, self.sc_k_edit, self.lc_k_edit]:
@@ -894,7 +1055,18 @@ class MainWindow(QMainWindow):
             return "^GSPC"
         if "QQQ" in s:
             return "QQQ"
+        if "AAPL" in s:
+            return "AAPL"
         return s
+
+    def _market_closed_for_trade_date(self, trade_date) -> bool:
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        today_et = now_et.date()
+        if trade_date < today_et:
+            return True
+        if trade_date > today_et:
+            return False
+        return (now_et.hour, now_et.minute) >= (16, 0)
 
     def _check_trade_outcomes(self) -> None:
         trades = self.store.list_sorted()
@@ -909,6 +1081,11 @@ class MainWindow(QMainWindow):
             saved = _iso_to_local(str(tr.get("savedAt", "")))
             if saved is None:
                 tr["result"] = "NO DATE"
+                continue
+
+            if not self._market_closed_for_trade_date(saved.date()):
+                tr["result"] = "PENDING"
+                tr["dayClose"] = None
                 continue
 
             be_l = tr.get("breakEvenLower")
@@ -990,6 +1167,8 @@ class MainWindow(QMainWindow):
                         item.setForeground(Qt.darkGreen)
                     elif result == "LOSS":
                         item.setForeground(Qt.red)
+                    elif result == "PENDING":
+                        item.setForeground(Qt.darkYellow)
                 self.trade_table.setItem(row_idx, col, item)
 
         self.trade_table.resizeColumnsToContents()
