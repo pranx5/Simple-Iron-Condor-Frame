@@ -89,7 +89,7 @@ If a trade is missing breakevens or close data is unavailable, result shows `NO 
 
 ## Where To Find IV In Thinkorswim
 
-Use the value shown in the option chain header row under **Net Chng %** (circled below in your screenshot).
+Use the value shown in the option chain header row under **Net Chng %** (circled below in screenshot).
 
 - Open **Trade** tab
 - Load the underlying (ex: SPX)
