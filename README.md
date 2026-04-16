@@ -2,7 +2,7 @@
 
 A native **PySide6** desktop app for planning same-day (0DTE) iron condors on **SPX** and **QQQ**.
 
-No Node.js, no browser app required. Run locally with:
+Run locally with:
 
 ```bash
 python app.py
