@@ -216,6 +216,7 @@ class MainWindow(QMainWindow):
         self.ticker_combo.addItem("SPX (^GSPC)", "SPX")
         self.ticker_combo.addItem("QQQ", "QQQ")
         self.ticker_combo.addItem("AAPL", "AAPL")
+        self.ticker_combo.addItem("IWM", "IWM")
         self.ticker_combo.setMinimumWidth(150)
         header_controls.addWidget(self.ticker_combo)
 
@@ -571,6 +572,13 @@ class MainWindow(QMainWindow):
         if name == "QQQ":
             return [
                 ("QQQ", "QQQ", 2.0, False, 0.12),
+                ("SPY", "SPY", 1.0, False, 0.08),
+                ("^VIX", "VIX", 1.3, True, 1.5),
+                ("^TNX", "10Y Yield", 0.7, True, 0.35),
+            ]
+        if name == "IWM":
+            return [
+                ("IWM", "IWM", 2.0, False, 0.15),
                 ("SPY", "SPY", 1.0, False, 0.08),
                 ("^VIX", "VIX", 1.3, True, 1.5),
                 ("^TNX", "10Y Yield", 0.7, True, 0.35),
@@ -1057,6 +1065,8 @@ class MainWindow(QMainWindow):
             return "QQQ"
         if "AAPL" in s:
             return "AAPL"
+        if "IWM" in s:
+            return "IWM"
         return s
 
     def _market_closed_for_trade_date(self, trade_date) -> bool:

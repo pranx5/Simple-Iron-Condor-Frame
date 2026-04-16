@@ -20,6 +20,11 @@ UNDERLYINGS = {
         "wing": 1,
         "iv_default": 28.0,
     },
+    "IWM": {
+        "ticker": "IWM",
+        "wing": 1,
+        "iv_default": 24.0,
+    },
 }
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
