@@ -25,6 +25,11 @@ UNDERLYINGS = {
         "wing": 1,
         "iv_default": 24.0,
     },
+    "SPY": {
+        "ticker": "SPY",
+        "wing": 1,
+        "iv_default": 20.0,
+    },
 }
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
