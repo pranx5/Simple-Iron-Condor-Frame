@@ -23,7 +23,7 @@ python app.py
 - Draws expiration P/L graph
 - Saves trade journal entries to disk (`data/trades.json`)
 - Can evaluate saved trades as `WIN` / `LOSS` from trade-day close vs breakevens
-- Includes a directional-bias panel (`Projected Up/Down/Neutral`) from multiple Yahoo signals
+- Includes a manual SPX news sentiment scanner powered by Anthropic web search
 
 > Educational tool only. Not financial advice.
 
@@ -66,14 +66,15 @@ python app.py
 7. Enter premiums from chain/broker to evaluate metrics
 8. Save the trade in the journal if desired
 9. Click **Check Win/Loss** in the trade log to backfill `Close` and `Result`
-10. Use **Directional Bias** as a soft tilt input when adjusting condor placement
+10. Click **Scan news** when you want SPX/S&P 500 news sentiment context for strike placement
 
-## Directional Bias (Experimental)
+## SPX News Sentiment Scanner
 
-The app pulls several Yahoo signals (index/ETF, futures when relevant, VIX, and rates) and computes a weighted score.
+The app can call Anthropic's Messages API with web search to summarize today's most important SPX/S&P 500 market news.
 
-- Output label: `Projected Up`, `Projected Down`, or `Neutral`
-- Includes confidence (`Low/Medium/High`) and per-signal impact row
+- Enter your Anthropic API key once; it is saved locally in Qt app settings
+- Click **Scan news** manually; the app does not auto-run scans on launch, so API calls only happen when requested
+- Output includes bias, confidence, a strike shift suggestion, summary, and three driver rows
 - Intended only as context for small strike skew adjustments, not a standalone trade signal
 
 ## Win/Loss Journal Check

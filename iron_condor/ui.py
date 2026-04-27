@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, QSettings, Qt, QThread, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from .config import UNDERLYINGS
+from .anthropic_client import AnthropicScanError, scan_spx_news_sentiment
 from .math_utils import normal_cdf, one_sd_dollars, pl_at_expiry_per_share, pop_profit_zone, round_strike
 from .storage import TradeStore
 from .yahoo_client import fetch_yahoo_close_for_date, fetch_yahoo_quote
@@ -165,6 +166,23 @@ class PayoffCanvas(FigureCanvasQTAgg):
         self.draw_idle()
 
 
+class NewsScanWorker(QObject):
+    finished = Signal(dict)
+    failed = Signal(str)
+
+    def __init__(self, api_key: str) -> None:
+        super().__init__()
+        self.api_key = api_key
+
+    def run(self) -> None:
+        try:
+            self.finished.emit(scan_spx_news_sentiment(self.api_key))
+        except AnthropicScanError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:
+            self.failed.emit(f"News scan failed: {exc}")
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -172,7 +190,10 @@ class MainWindow(QMainWindow):
         self.resize(1380, 920)
 
         self.store = TradeStore()
+        self.settings = QSettings("IronCondor", "IronCondorTool")
         self.cached_trades: list[dict[str, Any]] = []
+        self.news_scan_thread: QThread | None = None
+        self.news_scan_worker: NewsScanWorker | None = None
 
         self.state = {
             "name": "SPX",
@@ -240,7 +261,7 @@ class MainWindow(QMainWindow):
 
         left = QVBoxLayout()
         left.addWidget(self._build_suggestion_group())
-        left.addWidget(self._build_bias_group())
+        left.addWidget(self._build_news_scanner_group())
         left.addWidget(self._build_legs_group())
         left.addWidget(self._build_metrics_group())
 
@@ -379,39 +400,71 @@ class MainWindow(QMainWindow):
 
         return box
 
-    def _build_bias_group(self) -> QGroupBox:
-        box = QGroupBox("Directional Bias (Experimental)")
+    def _build_news_scanner_group(self) -> QGroupBox:
+        box = QGroupBox("SPX News Sentiment Scanner")
+        box.setCheckable(True)
+        box.setChecked(True)
         lay = QVBoxLayout(box)
 
-        row = QHBoxLayout()
-        self.bias_summary_lbl = QLabel("Projected: -")
-        self.bias_summary_lbl.setStyleSheet("font-weight:700;color:#334155;")
-        row.addWidget(self.bias_summary_lbl)
+        key_row = QHBoxLayout()
+        self.anthropic_key_lbl = QLabel("Anthropic API Key:")
+        key_row.addWidget(self.anthropic_key_lbl)
+        self.anthropic_key_edit = QLineEdit()
+        self.anthropic_key_edit.setEchoMode(QLineEdit.Password)
+        self.anthropic_key_edit.setPlaceholderText("sk-ant-...")
+        self.anthropic_key_edit.setText(str(self.settings.value("anthropic_api_key", "")))
+        key_row.addWidget(self.anthropic_key_edit, 1)
+        lay.addLayout(key_row)
 
-        self.bias_conf_lbl = QLabel("Confidence: -")
-        self.bias_conf_lbl.setStyleSheet("color:#475569;")
-        row.addWidget(self.bias_conf_lbl)
+        top = QHBoxLayout()
+        self.news_bias_lbl = QLabel("Bias: -")
+        self.news_bias_lbl.setStyleSheet("font-weight:700;color:#334155;")
+        top.addWidget(self.news_bias_lbl)
 
-        self.refresh_bias_btn = QPushButton("Refresh Bias")
-        row.addWidget(self.refresh_bias_btn)
-        row.addStretch(1)
-        lay.addLayout(row)
+        self.news_conf_lbl = QLabel("Confidence: -")
+        self.news_conf_lbl.setStyleSheet("color:#475569;")
+        top.addWidget(self.news_conf_lbl)
 
-        self.bias_score_lbl = QLabel("Score: -")
-        self.bias_score_lbl.setStyleSheet("color:#475569;")
-        lay.addWidget(self.bias_score_lbl)
+        self.scan_news_btn = QPushButton("Scan news")
+        top.addWidget(self.scan_news_btn)
+        top.addStretch(1)
+        lay.addLayout(top)
 
-        self.bias_table = QTableWidget(0, 4)
-        self.bias_table.setHorizontalHeaderLabels(["Signal", "Change %", "Weight", "Impact"])
-        self.bias_table.setSelectionMode(QTableWidget.NoSelection)
-        self.bias_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.bias_table.horizontalHeader().setStretchLastSection(True)
-        self.bias_table.setFixedHeight(160)
-        lay.addWidget(self.bias_table)
+        self.news_shift_lbl = QLabel("Strike shift: -")
+        self.news_shift_lbl.setStyleSheet("color:#475569;font-weight:600;")
+        lay.addWidget(self.news_shift_lbl)
 
-        self.bias_note_lbl = QLabel("Heuristic only. Use as directional context, not a trade signal.")
-        self.bias_note_lbl.setStyleSheet("color:#64748b;")
-        lay.addWidget(self.bias_note_lbl)
+        self.news_summary_edit = QTextEdit()
+        self.news_summary_edit.setReadOnly(True)
+        self.news_summary_edit.setPlaceholderText("Click Scan news to pull today's SPX/S&P 500 news.")
+        self.news_summary_edit.setFixedHeight(86)
+        lay.addWidget(self.news_summary_edit)
+
+        self.news_driver_table = QTableWidget(0, 3)
+        self.news_driver_table.setHorizontalHeaderLabels(["Driver", "Impact", "Note"])
+        self.news_driver_table.setSelectionMode(QTableWidget.NoSelection)
+        self.news_driver_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.news_driver_table.horizontalHeader().setStretchLastSection(True)
+        self.news_driver_table.setFixedHeight(118)
+        lay.addWidget(self.news_driver_table)
+
+        self.news_status_lbl = QLabel("Runs only when clicked to keep API costs down.")
+        self.news_status_lbl.setStyleSheet("color:#64748b;")
+        self.news_status_lbl.setWordWrap(True)
+        lay.addWidget(self.news_status_lbl)
+
+        panel_widgets = [
+            self.anthropic_key_lbl,
+            self.anthropic_key_edit,
+            self.news_bias_lbl,
+            self.news_conf_lbl,
+            self.scan_news_btn,
+            self.news_shift_lbl,
+            self.news_summary_edit,
+            self.news_driver_table,
+            self.news_status_lbl,
+        ]
+        box.toggled.connect(lambda checked: [w.setVisible(checked) for w in panel_widgets])
 
         return box
 
@@ -552,131 +605,106 @@ class MainWindow(QMainWindow):
         self.save_trade_btn.clicked.connect(self._save_trade)
         self.delete_trade_btn.clicked.connect(self._delete_selected_trade)
         self.check_outcomes_btn.clicked.connect(self._check_trade_outcomes)
-        self.refresh_bias_btn.clicked.connect(self._refresh_directional_bias)
+        self.scan_news_btn.clicked.connect(self._scan_spx_news)
+        self.anthropic_key_edit.textChanged.connect(self._save_anthropic_key)
         self.filter_combo.currentIndexChanged.connect(self._render_trade_list)
+
+    def _save_anthropic_key(self) -> None:
+        self.settings.setValue("anthropic_api_key", self.anthropic_key_edit.text().strip())
+
+    def _set_news_loading(self, loading: bool) -> None:
+        self.scan_news_btn.setEnabled(not loading)
+        self.anthropic_key_edit.setEnabled(not loading)
+        if loading:
+            self.scan_news_btn.setText("Scanning...")
+            self.news_status_lbl.setText("Searching today's SPX/S&P 500 news with Claude...")
+            self.news_status_lbl.setStyleSheet("color:#475569;")
+        else:
+            self.scan_news_btn.setText("Scan again")
+
+    def _scan_spx_news(self) -> None:
+        api_key = self.anthropic_key_edit.text().strip()
+        self._save_anthropic_key()
+        if not api_key:
+            self.news_status_lbl.setText("Enter an Anthropic API key first.")
+            self.news_status_lbl.setStyleSheet("color:#b91c1c;")
+            return
+
+        self._set_news_loading(True)
+        self.news_bias_lbl.setText("Bias: scanning...")
+        self.news_conf_lbl.setText("Confidence: -")
+        self.news_shift_lbl.setText("Strike shift: -")
+        self.news_summary_edit.clear()
+        self.news_driver_table.setRowCount(0)
+
+        self.news_scan_thread = QThread(self)
+        self.news_scan_worker = NewsScanWorker(api_key)
+        self.news_scan_worker.moveToThread(self.news_scan_thread)
+        self.news_scan_thread.started.connect(self.news_scan_worker.run)
+        self.news_scan_worker.finished.connect(self._on_news_scan_success)
+        self.news_scan_worker.failed.connect(self._on_news_scan_failure)
+        self.news_scan_worker.finished.connect(self.news_scan_thread.quit)
+        self.news_scan_worker.failed.connect(self.news_scan_thread.quit)
+        self.news_scan_worker.finished.connect(self.news_scan_worker.deleteLater)
+        self.news_scan_worker.failed.connect(self.news_scan_worker.deleteLater)
+        self.news_scan_thread.finished.connect(self.news_scan_thread.deleteLater)
+        self.news_scan_thread.finished.connect(self._clear_news_scan_worker)
+        self.news_scan_thread.start()
+
+    def _clear_news_scan_worker(self) -> None:
+        self.news_scan_thread = None
+        self.news_scan_worker = None
+
+    def _on_news_scan_success(self, scan: dict[str, Any]) -> None:
+        bias = str(scan.get("bias", "neutral")).title()
+        confidence = str(scan.get("confidence", "low")).title()
+        shift = str(scan.get("strike_shift", "hold current strikes"))
+
+        colors = {"Bullish": "#166534", "Bearish": "#b91c1c", "Neutral": "#475569"}
+        self.news_bias_lbl.setText(f"Bias: {bias}")
+        self.news_bias_lbl.setStyleSheet(f"font-weight:700;color:{colors.get(bias, '#475569')};")
+        self.news_conf_lbl.setText(f"Confidence: {confidence}")
+        self.news_shift_lbl.setText(f"Strike shift: {shift}")
+        self.news_summary_edit.setPlainText(str(scan.get("summary", "")).strip())
+
+        drivers = scan.get("drivers") if isinstance(scan.get("drivers"), list) else []
+        self.news_driver_table.setRowCount(len(drivers))
+        for r, driver in enumerate(drivers):
+            if not isinstance(driver, dict):
+                continue
+            impact = str(driver.get("impact", ""))
+            impact_l = impact.lower()
+            color = "#475569"
+            if "bull" in impact_l or "positive" in impact_l or "up" in impact_l:
+                color = "#166534"
+            elif "bear" in impact_l or "negative" in impact_l or "down" in impact_l:
+                color = "#b91c1c"
+            items = [
+                QTableWidgetItem(str(driver.get("label", ""))),
+                QTableWidgetItem(impact),
+                QTableWidgetItem(str(driver.get("note", ""))),
+            ]
+            items[1].setForeground(QColor(color))
+            for c, item in enumerate(items):
+                self.news_driver_table.setItem(r, c, item)
+        self.news_driver_table.resizeColumnsToContents()
+
+        stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+        self.news_status_lbl.setText(f"Last scan: {stamp}")
+        self.news_status_lbl.setStyleSheet("color:#166534;")
+        self._set_news_loading(False)
+
+    def _on_news_scan_failure(self, message: str) -> None:
+        self.news_bias_lbl.setText("Bias: -")
+        self.news_conf_lbl.setText("Confidence: -")
+        self.news_shift_lbl.setText("Strike shift: -")
+        self.news_status_lbl.setText(f"{message} Click Scan again to retry.")
+        self.news_status_lbl.setStyleSheet("color:#b91c1c;")
+        self._set_news_loading(False)
 
     def _on_inputs_changed(self) -> None:
         self._recompute_suggestions()
         self._update_metrics()
-
-    def _bias_universe(self) -> list[tuple[str, str, float, bool, float]]:
-        # (ticker, label, weight, invert_sign, threshold_pct)
-        name = str(self.state.get("name", "SPX"))
-        if name == "SPX":
-            return [
-                ("^GSPC", "SPX", 2.0, False, 0.10),
-                ("ES=F", "ES Futures", 2.0, False, 0.10),
-                ("SPY", "SPY", 1.0, False, 0.08),
-                ("^VIX", "VIX", 1.3, True, 1.5),
-                ("^TNX", "10Y Yield", 0.7, True, 0.35),
-            ]
-        if name == "QQQ":
-            return [
-                ("QQQ", "QQQ", 2.0, False, 0.12),
-                ("SPY", "SPY", 1.0, False, 0.08),
-                ("^VIX", "VIX", 1.3, True, 1.5),
-                ("^TNX", "10Y Yield", 0.7, True, 0.35),
-            ]
-        if name == "IWM":
-            return [
-                ("IWM", "IWM", 2.0, False, 0.15),
-                ("SPY", "SPY", 1.0, False, 0.08),
-                ("^VIX", "VIX", 1.3, True, 1.5),
-                ("^TNX", "10Y Yield", 0.7, True, 0.35),
-            ]
-        if name == "SPY":
-            return [
-                ("SPY", "SPY", 2.0, False, 0.08),
-                ("ES=F", "ES Futures", 1.2, False, 0.10),
-                ("^VIX", "VIX", 1.3, True, 1.5),
-                ("^TNX", "10Y Yield", 0.7, True, 0.35),
-            ]
-        return [
-            ("AAPL", "AAPL", 2.0, False, 0.15),
-            ("QQQ", "QQQ", 1.0, False, 0.12),
-            ("SPY", "SPY", 0.8, False, 0.08),
-            ("^VIX", "VIX", 1.2, True, 1.5),
-            ("^TNX", "10Y Yield", 0.5, True, 0.35),
-        ]
-
-    def _refresh_directional_bias(self) -> None:
-        universe = self._bias_universe()
-        self.refresh_bias_btn.setEnabled(False)
-        self.bias_summary_lbl.setText("Projected: refreshing...")
-        self.bias_conf_lbl.setText("Confidence: -")
-        self.bias_score_lbl.setText("Score: -")
-
-        score = 0.0
-        rows: list[tuple[str, str, str, str, Optional[str]]] = []
-        usable = 0
-
-        for ticker, label, weight, invert_sign, threshold in universe:
-            change_text = "n/a"
-            weight_text = f"{weight:.1f}"
-            impact_text = "No data"
-            color = "#64748b"
-            effect = 0.0
-            try:
-                q = fetch_yahoo_quote(ticker)
-                pct = q.change_pct
-                if pct is not None:
-                    usable += 1
-                    signed = -pct if invert_sign else pct
-                    change_text = f"{pct:+.2f}%"
-                    if signed >= threshold:
-                        effect = weight
-                    elif signed <= -threshold:
-                        effect = -weight
-                    else:
-                        effect = 0.0
-
-                    if effect > 0:
-                        impact_text = f"Bullish (+{weight:.1f})"
-                        color = "#166534"
-                    elif effect < 0:
-                        impact_text = f"Bearish (-{weight:.1f})"
-                        color = "#b91c1c"
-                    else:
-                        impact_text = "Neutral (0.0)"
-                        color = "#475569"
-            except Exception:
-                pass
-
-            score += effect
-            rows.append((label, change_text, weight_text, impact_text, color))
-
-        abs_score = abs(score)
-        if score >= 2.0:
-            projected = "Projected Up"
-            proj_color = "#166534"
-        elif score <= -2.0:
-            projected = "Projected Down"
-            proj_color = "#b91c1c"
-        else:
-            projected = "Neutral"
-            proj_color = "#475569"
-
-        if abs_score >= 4.0:
-            conf = "High"
-        elif abs_score >= 2.0:
-            conf = "Medium"
-        else:
-            conf = "Low"
-
-        self.bias_summary_lbl.setText(f"Projected: {projected}")
-        self.bias_summary_lbl.setStyleSheet(f"font-weight:700;color:{proj_color};")
-        self.bias_conf_lbl.setText(f"Confidence: {conf} ({usable}/{len(universe)} signals)")
-        self.bias_score_lbl.setText(f"Score: {score:+.2f}")
-
-        self.bias_table.setRowCount(len(rows))
-        for r, (label, chg, wt, impact, color) in enumerate(rows):
-            items = [QTableWidgetItem(label), QTableWidgetItem(chg), QTableWidgetItem(wt), QTableWidgetItem(impact)]
-            for c, it in enumerate(items):
-                if c == 3:
-                    it.setForeground(QColor(color))
-                self.bias_table.setItem(r, c, it)
-        self.bias_table.resizeColumnsToContents()
-        self.refresh_bias_btn.setEnabled(True)
 
     def _on_suggested_inputs_changed(self) -> None:
         self._update_suggested_ticket_preview()
@@ -774,7 +802,6 @@ class MainWindow(QMainWindow):
         if self._legs_strikes_empty():
             self._apply_suggestions_to_legs()
         self._update_metrics()
-        self._refresh_directional_bias()
 
     def _legs_strikes_empty(self) -> bool:
         for w in [self.lp_k_edit, self.sp_k_edit, self.sc_k_edit, self.lc_k_edit]:
